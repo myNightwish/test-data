@@ -35,5 +35,5 @@ jobs:
       # 4. 赋予 .sh 脚本执行权限，并运行它
       - name: Make script executable and run
         run: |
-          chmod +x ./run_task.sh
-          ./run_task.sh
+          chmod +x ./run_daily.sh
+          ./run_daily.sh
