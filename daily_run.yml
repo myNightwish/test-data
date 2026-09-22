@@ -1,39 +1,43 @@
-name: Daily Python Script Runner
+name: Daily US Stock Report
 
-# 触发条件
 on:
   schedule:
-    # 定时任务：每天运行一次 (Cron 表达式)
-    # 注意：GitHub Actions 使用的是 UTC 时间！
-    # 下面设定的是 UTC 时间的 06:00（如果你在北京时间，相当于上午 14:00）
-    - cron: '0 6 * * *'
-  
-  # 允许你随时在 GitHub 网页上点击按钮手动运行（方便测试代码）
-  workflow_dispatch: 
+    # 对应北京时间 09:00, 21:20, 22:20 (换算为 UTC 时间)
+    - cron: '0 1 * * *'
+    - cron: '20 13 * * *'
+    - cron: '20 14 * * *'
+
+  # 支持在 GitHub 界面手动触发，并可勾选是否开启 US_FORCE=1
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: '是否跳过美东时间判断强制运行 (US_FORCE=1)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
-  build-and-run:
-    runs-on: ubuntu-latest # 使用最新的 Ubuntu 虚拟环境
+  run-script:
+    runs-on: ubuntu-latest
 
     steps:
-      # 1. 拉取你的仓库代码
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. 设置 Python 环境
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.14' # 填写你需要使用的 Python 版本
+          python-version: '3.10'
 
-      # 3. 安装依赖 (如果你的仓库里有 requirements.txt)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # 4. 赋予 .sh 脚本执行权限，并运行它
-      - name: Make script executable and run
+      - name: Run Bash Entrypoint
+        env:
+          # 如果在网页上勾选了强制运行，设置 US_FORCE=1
+          US_FORCE: ${{ github.event.inputs.force_run == 'true' && '1' || '0' }}
         run: |
-          chmod +x ./run_daily.sh
-          ./run_daily.sh
+          chmod +x ./your_script_name.sh
+          ./your_script_name.sh
