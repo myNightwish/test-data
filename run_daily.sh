@@ -1,22 +1,26 @@
 #!/bin/bash
-# 每日报告定时任务入口。launchd 不继承 shell 环境，所以这里显式设置工作目录和 PATH。
+# 每日报告定时任务入口（兼容 GitHub Actions 与本地运行）
 set -o pipefail
 
-PROJECT_DIR="/Users/maomao/Desktop/US"
+# 1. 动态获取当前项目根目录
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR" || exit 1
 
 export US_HEADLESS=1
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
+# 2. 移除硬编码的 PATH，确保 GitHub Actions 的 Python 环境变量有效
 
 LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/daily_$(date +%Y-%m-%d).log"
 
-# launchd 只认本地钟点，不懂美股夏令时。plist 里配了三个北京时间触发点
-# （09:00 复盘、21:20 与 22:20 盘前），具体哪个真正执行由美东时间决定：
-#   夏令时 EDT：北京 21:20 → 美东 09:20 ✓ ；北京 22:20 → 美东 10:20 ✗
-#   冬令时 EST：北京 21:20 → 美东 08:20 ✗ ；北京 22:20 → 美东 09:20 ✓
-# 这样夏令时切换时不用手改 plist。US_FORCE=1 可跳过判断，用于手动测试。
+# 3. 兼容 Python 执行指令
+PYTHON_CMD="python"
+if ! command -v python &> /dev/null; then
+    PYTHON_CMD="python3"
+fi
+
+# 美东时间与窗口判断（TZ=America/New_York 在 GitHub 的 Ubuntu 环境同样支持）
 read -r ET_H ET_M ET_HM <<<"$(TZ=America/New_York date '+%H %M %H:%M')"
 ET_MIN=$(( 10#$ET_H * 60 + 10#$ET_M ))
 
@@ -32,16 +36,20 @@ elif [ "$ET_MIN" -ge "$REVIEW_START" ] && [ "$ET_MIN" -le "$REVIEW_END" ]; then
 elif [ "$ET_MIN" -ge "$PREOPEN_START" ] && [ "$ET_MIN" -le "$PREOPEN_END" ]; then
     WINDOW="开盘前提醒"
 else
-    echo "$(date '+%Y-%m-%d %H:%M:%S') 跳过：美东 $ET_HM 不在复盘(19:30-21:30)或盘前(09:10-09:30)窗口内" >>"$LOG_FILE"
+    MSG="$(date '+%Y-%m-%d %H:%M:%S') 跳过：美东 $ET_HM 不在复盘(19:30-21:30)或盘前(09:10-09:30)窗口内"
+    echo "$MSG" | tee -a "$LOG_FILE"
     exit 0
 fi
 
-echo "===== 开始 $(date '+%Y-%m-%d %H:%M:%S')（美东 $ET_HM · $WINDOW）=====" >>"$LOG_FILE"
-"$PROJECT_DIR/.venv/bin/python" "$PROJECT_DIR/main.py" >>"$LOG_FILE" 2>&1
-STATUS=$?
-echo "===== 结束 $(date '+%Y-%m-%d %H:%M:%S') 退出码=$STATUS =====" >>"$LOG_FILE"
+echo "===== 开始 $(date '+%Y-%m-%d %H:%M:%S')（美东 $ET_HM · $WINDOW）=====" | tee -a "$LOG_FILE"
 
-# 只保留最近 30 天日志
+# 4. 执行 python 脚本，并将输出同时打印到 GitHub 网页控制台与日志文件
+"$PYTHON_CMD" "$PROJECT_DIR/main.py" 2>&1 | tee -a "$LOG_FILE"
+STATUS=${PIPESTATUS[0]}
+
+echo "===== 结束 $(date '+%Y-%m-%d %H:%M:%S') 退出码=$STATUS =====" | tee -a "$LOG_FILE"
+
+# 清理历史日志
 find "$LOG_DIR" -name 'daily_*.log' -mtime +30 -delete 2>/dev/null
 
 exit $STATUS
